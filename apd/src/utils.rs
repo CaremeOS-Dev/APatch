@@ -192,7 +192,9 @@ pub fn daemonize() -> Result<()> {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn umask(mask: u32) {
-    unsafe { libc::umask(mask) };
+    // mode_t is u32 on 64-bit but u16 on 32-bit Android/arm (AArch32 ABI), so the
+    // mask has to be narrowed for the armv7 build to compile.
+    unsafe { libc::umask(mask as libc::mode_t) };
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]

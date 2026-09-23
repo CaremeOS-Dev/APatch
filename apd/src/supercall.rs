@@ -49,7 +49,19 @@ fn ver_and_cmd(cmd: c_long) -> c_long {
     let version_code: u32 = ((KP_MAJOR << 16) + (KP_MINOR << 8) + KP_PATCH)
         .try_into()
         .unwrap();
-    ((version_code as c_long) << 32) | (0x1158 << 16) | (cmd & 0xFFFF)
+    // AArch32: c_long is 32 bits, so the KernelPatch version cannot be packed
+    // into the high half of the word -- `<< 32` is a const-eval overflow and is
+    // rejected outright (#[deny(arithmetic_overflow)]).  The kernel only decodes
+    // `cmd = ver_xx_cmd & 0xFFFF` (the version lives in bits 32.. where it is
+    // ignored, "todo: from 0.10.5"), so dropping it is lossless on arm32.
+    #[cfg(target_pointer_width = "64")]
+    {
+        ((version_code as c_long) << 32) | (0x1158 << 16) | (cmd & 0xFFFF)
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        (0x1158 << 16) | (cmd & 0xFFFF)
+    }
 }
 
 fn sc_su_revoke_uid(key: &CStr, uid: uid_t) -> c_long {

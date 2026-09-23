@@ -193,10 +193,10 @@ pub fn root_shell() -> Result<()> {
         // guaranteed to be one, which is UB and made every lookup fail.
         let c_name = CString::new(name.as_str())?;
         (uid, gid) = unsafe {
-            #[cfg(target_arch = "aarch64")]
-            let pw = libc::getpwnam(c_name.as_ptr()).as_ref();
-            #[cfg(target_arch = "x86_64")]
-            let pw = libc::getpwnam(c_name.as_ptr() as *const i8).as_ref();
+            // c_char is u8 on aarch64 but i8 on arm32/x86_64, so cast to the
+            // arch's own c_char instead of enumerating architectures -- armv7
+            // (armeabi-v7a) previously had no binding here at all (E0425).
+            let pw = libc::getpwnam(c_name.as_ptr() as *const libc::c_char).as_ref();
 
             match pw {
                 Some(pw) => (pw.pw_uid, pw.pw_gid),

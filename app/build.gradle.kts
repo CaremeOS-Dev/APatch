@@ -108,13 +108,16 @@ android {
         targetSdk = androidTargetSdkVersion
         versionCode = managerVersionCode
         versionName = managerVersionName
-        ndk.abiFilters.addAll(arrayOf("arm64-v8a"))
+        // XTC / BBK msm8937_32go_nd01 and other 32-bit-only devices have no
+        // arm64 userspace at all, so the arm32 ABI must be packaged as well --
+        // without it the manager cannot load a single native library.
+        ndk.abiFilters.addAll(arrayOf("arm64-v8a", "armeabi-v7a"))
         externalNativeBuild {
             cmake {
                 cppFlags += baseFlags + "-std=c++2b"
                 cFlags += baseFlags + "-std=c2x"
                 arguments += baseArgs
-                abiFilters("arm64-v8a")
+                abiFilters("arm64-v8a", "armeabi-v7a")
             }
         }
         buildConfigField("String", "buildKPV", "\"$kernelPatchVersion\"")
@@ -302,10 +305,10 @@ tasks.getByName("preBuild").dependsOn(
 )
 
 // https://github.com/bbqsrc/cargo-ndk
-// cargo ndk -t arm64-v8a build --release
+// cargo ndk -t arm64-v8a -t armeabi-v7a build --release
 tasks.register<Exec>("cargoBuild") {
     executable("cargo")
-    args("ndk", "-t", "arm64-v8a", "build", "--release")
+    args("ndk", "-t", "arm64-v8a", "-t", "armeabi-v7a", "build", "--release")
     workingDir("${project.rootDir}/apd")
 }
 
@@ -316,9 +319,17 @@ tasks.register<Copy>("buildApd") {
     rename("apd", "libapd.so")
 }
 
+// arm32 twin of the daemon (32-bit-only devices such as the XTC watch).
+tasks.register<Copy>("buildApdArm") {
+    dependsOn("cargoBuild")
+    from("${project.rootDir}/apd/target/armv7-linux-androideabi/release/apd")
+    into("${project.projectDir}/libs/armeabi-v7a")
+    rename("apd", "libapd.so")
+}
+
 tasks.configureEach {
     if (name == "mergeDebugJniLibFolders" || name == "mergeReleaseJniLibFolders") {
-        dependsOn("buildApd")
+        dependsOn("buildApd", "buildApdArm")
     }
 }
 

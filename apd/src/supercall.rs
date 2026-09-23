@@ -17,6 +17,15 @@ include!(concat!(env!("OUT_DIR"), "/kp_version.rs"));
 
 const KSTORAGE_EXCLUDE_LIST_GROUP: i32 = 1;
 
+// AArch32 (armeabi-v7a) needs a different entry: nr45 in the native arm32
+// sys_call_table is sys_brk, so the daemon would be performing a brk() and never
+// reach the KernelPatch supercall hook.  This must match the kernel side
+// (uapi/scdefs.h, CONFIG_ARM) and the app's copy of the same header; on the XTC
+// 4.9/arm32 kernel slot 394 is sys_pkey_mprotect, a syscall that never runs on
+// arm32/Android (the unused sys_ni_syscall slots there are 388/389/399).
+#[cfg(target_arch = "arm")]
+const __NR_SUPERCALL: c_long = 394;
+#[cfg(not(target_arch = "arm"))]
 const __NR_SUPERCALL: c_long = 45;
 const SUPERCALL_SU: c_long = 0x1010;
 const SUPERCALL_KSTORAGE_WRITE: c_long = 0x1041;

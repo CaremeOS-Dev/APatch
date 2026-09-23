@@ -18,7 +18,18 @@ static inline long hash_key(const char *key)
 #define SUPERCALL_HELLO_ECHO "hello1158"
 
 // #define __NR_supercall __NR3264_truncate // 45
+// AArch32 (armeabi-v7a) needs its own number: in the native arm32
+// sys_call_table nr45 is sys_brk, i.e. calling 45 from the app would be a brk()
+// and never reach the supercall hook.  The kernel side selects a dedicated slot
+// for CONFIG_ARM (see the KernelPatch tree, same header) and the two values must
+// match.  On the XTC 4.9/arm32 kernel sys_call_table[394] is sys_pkey_mprotect,
+// a syscall that never runs on arm32/Android, so 394 is a safe entry there; the
+// truly unused sys_ni_syscall slots on that kernel are 388/389/399.
+#if defined(__arm__) && !defined(__aarch64__)
+#define __NR_supercall 394
+#else
 #define __NR_supercall 45
+#endif
 
 #define SUPERCALL_HELLO 0x1000
 #define SUPERCALL_KLOG 0x1004

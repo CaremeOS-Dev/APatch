@@ -442,6 +442,20 @@ check_data() {
   $DATA_DE && set_nvbase "/data/adb"
 }
 
+# Some devices (BBK / XTC MSM8937 watches, Qualcomm in general) expose the GPT
+# partition symlinks ONLY under /dev/block/bootdevice/by-name -- there is no
+# /dev/block/by-name.  InstallAP.sh / UninstallAP.sh d/d the boot partition via
+# the literal path /dev/block/by-name/boot, so build a compatibility tree once.
+# (device verified: boot -> /dev/block/mmcblk0p32 under bootdevice/by-name)
+if [ ! -e /dev/block/by-name ] && [ -d /dev/block/bootdevice/by-name ]; then
+  ui_print "- No /dev/block/by-name, symlinking from /dev/block/bootdevice/by-name"
+  mkdir -p /dev/block/by-name 2>/dev/null
+  for _bn in /dev/block/bootdevice/by-name/*; do
+    [ -e "$_bn" ] && ln -sf "$_bn" /dev/block/by-name/ 2>/dev/null
+  done
+  unset _bn
+fi
+
 api_level_arch_detect() {
   API=$(grep_get_prop ro.build.version.sdk)
   ABI=$(grep_get_prop ro.product.cpu.abi)

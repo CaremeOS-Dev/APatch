@@ -24,6 +24,15 @@ function failed(){
 	exit
 }
 
+# This device (XTC/MSM8937) has no /dev/block/by-name; the dd below needs it.
+if [ ! -e /dev/block/by-name ] && [ -d /dev/block/bootdevice/by-name ]; then
+	mkdir -p /dev/block/by-name 2>/dev/null
+	for _bn in /dev/block/bootdevice/by-name/*; do
+		[ -e "$_bn" ] && ln -sf "$_bn" /dev/block/by-name/ 2>/dev/null
+	done
+	unset _bn
+fi
+
 function boot_execute_ab(){
 	./lib/$(getprop ro.product.cpu.abi)/libkptools.so unpack boot.img
 	mv kernel kernel-origin

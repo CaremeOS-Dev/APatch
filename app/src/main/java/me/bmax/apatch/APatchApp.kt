@@ -291,8 +291,13 @@ class APApplication : Application(), Thread.UncaughtExceptionHandler {
         }
         apApp = this
 
-        val isArm64 = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
-        if (!isArm64) {
+        // 32-bit-only devices (e.g. MSM8937 / XTC ARMv7-A) report only
+        // armeabi-v7a in SUPPORTED_ABIS.  APatch now ships an arm32 apd and an
+        // arm32 JNI library and the kernel AArch32 supercall path is ported, so
+        // accept both 64-bit and 32-bit ABIs instead of refusing to start.
+        val isSupportedAbi =
+            Build.SUPPORTED_ABIS.any { it == "arm64-v8a" || it == "armeabi-v7a" }
+        if (!isSupportedAbi) {
             Toast.makeText(applicationContext, "Unsupported architecture!", Toast.LENGTH_LONG)
                 .show()
             Thread.sleep(5000)

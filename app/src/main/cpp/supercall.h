@@ -20,7 +20,7 @@
 static inline long ver_and_cmd(const char *key, long cmd)
 {
     uint32_t version_code = (MAJOR << 16) + (MINOR << 8) + PATCH;
-    return ((long)version_code << 32) | (0x1158 << 16) | (cmd & 0xFFFF);
+    return (long)(((long long)version_code << 32) | (0x1158u << 16) | (cmd & 0xFFFF));
 }
 
 /**
@@ -150,7 +150,7 @@ static inline long sc_su_task(const char *key, pid_t tid, struct su_profile *pro
 static inline long sc_kstorage_write(const char *key, int gid, long did, void *data, int offset, int dlen)
 {
     if (!key || !key[0]) return -EINVAL;
-    long ret = syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_KSTORAGE_WRITE), gid, did, data, (((long)offset << 32) | dlen));
+    long ret = syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_KSTORAGE_WRITE), gid, did, data, (((long long)offset << 32) | dlen));
     return ret;
 }
 
@@ -167,7 +167,7 @@ static inline long sc_kstorage_write(const char *key, int gid, long did, void *d
 static inline long sc_kstorage_read(const char *key, int gid, long did, void *out_data, int offset, int dlen)
 {
     if (!key || !key[0]) return -EINVAL;
-    long ret = syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_KSTORAGE_READ), gid, did, out_data, (((long)offset << 32) | dlen));
+    long ret = syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_KSTORAGE_READ), gid, did, out_data, (((long long)offset << 32) | dlen));
     return ret;
 }
 

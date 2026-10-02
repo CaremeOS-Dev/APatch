@@ -86,7 +86,11 @@ class PatchesViewModel : ViewModel() {
         patchDir.deleteRecursively()
         patchDir.mkdirs()
         val execs = listOf(
-            "libkptools.so", "libbusybox.so", "libkpatch.so", "libbootctl.so"
+            "libkptools.so", "libbusybox.so", "libkpatch.so", "libbootctl.so",
+            // Needed on AArch32/BBK/XTC images: the kernel inside boot.img is a COMPRESSED
+            // zImage, and kptools only parses a decompressed ARM Image. libmagiskboot.so
+            // unpacks/decompresses it; libbvfix.so drops the bootloader boot-verification check.
+            "libmagiskboot.so", "libbvfix.so"
         )
         error = ""
 
@@ -102,7 +106,8 @@ class PatchesViewModel : ViewModel() {
 
         // Extract scripts
         for (script in listOf(
-            "boot_patch.sh", "boot_unpatch.sh", "boot_extract.sh", "util_functions.sh", "kpimg"
+            "boot_patch.sh", "boot_unpatch.sh", "boot_extract.sh", "boot_unwrap_kernel.sh",
+            "util_functions.sh", "kpimg"
         )) {
             val dest = File(patchDir, script)
             apApp.assets.open(script).writeTo(dest)
@@ -135,10 +140,24 @@ class PatchesViewModel : ViewModel() {
     }
 
     private fun parseBootimg(bootimg: String) {
+        // AArch32/BBK/XTC images carry a COMPRESSED zImage and kptools only parses a raw
+        // Image ("can't find linux banner" otherwise, surfaced as a bogus "no
+        // CONFIG_KALLSYMS"). boot_unwrap_kernel.sh runs magiskboot, which decompresses the
+        // kernel on the fly, and writes ./kernel. Its stdout is kept off the shell's stdout
+        // so the INI document below stays parseable.
+        val unwrap = shellForResult(
+            shell,
+            "cd $patchDir",
+            "./busybox sh boot_unwrap_kernel.sh $bootimg",
+        )
+        if (!unwrap.isSuccess) {
+            Log.w(TAG, "kernel unwrap failed: ${unwrap.err.joinToString("\n")}")
+        }
+
+        // Only kptools' own output is an INI document.
         val result = shellForResult(
             shell,
             "cd $patchDir",
-            "./kptools unpacknolog $bootimg",
             "./kptools -l -i kernel",
         )
         if (result.isSuccess) {

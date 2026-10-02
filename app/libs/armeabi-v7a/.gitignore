@@ -1,0 +1,3 @@
+# AArch32 port: keep the ARM32 native deps but never the
+# byte-identical libapd.so backup ('*.bak').
+*.bak

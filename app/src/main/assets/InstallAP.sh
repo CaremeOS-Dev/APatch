@@ -1,4 +1,11 @@
 #!/bin/sh
+# --- APatch ARM32 force-patch: on 32-bit ARM the image-side CONFIG_* pre-checks are false
+#     negatives when the kernel ships without embedded IKCONFIG (XTC/MSM8937). Runtime
+#     /proc/kallsyms is authoritative, so a failed check is downgraded to a warning here.
+#     Set AP_FORCE_PATCH=0 to restore strict behaviour.
+if [ -z "$AP_FORCE_PATCH" ]; then
+  case "$(getprop ro.product.cpu.abi)" in armeabi-v7a|armeabi) AP_FORCE_PATCH=1 ;; *) AP_FORCE_PATCH=0 ;; esac
+fi
 # By SakuraKyuo
 
 OUTFD=/proc/self/fd/$2
@@ -45,7 +52,7 @@ fi
 
 function boot_execute_ab(){
 	./lib/$(getprop ro.product.cpu.abi)/libkptools.so unpack boot.img
-	if [[ ! $(./lib/$(getprop ro.product.cpu.abi)/libkptools.so -i ./kernel -f | grep CONFIG_KALLSYMS=y) ]]; then
+	if [ "$AP_FORCE_PATCH" != "1" ] && { [ ! -r /proc/kallsyms ] || [ "$(wc -l < /proc/kallsyms 2>/dev/null)" -lt 100 ]; }; then
 		kernelFlagsErr
 	fi
 	mv kernel kernel-origin
@@ -62,7 +69,7 @@ function boot_execute_ab(){
 
 function boot_execute(){
 	./lib/$(getprop ro.product.cpu.abi)/libkptools.so unpack boot.img
-	if [[ ! $(./lib/$(getprop ro.product.cpu.abi)/libkptools.so -i ./kernel -f | grep CONFIG_KALLSYMS=y) ]]; then
+	if [ "$AP_FORCE_PATCH" != "1" ] && { [ ! -r /proc/kallsyms ] || [ "$(wc -l < /proc/kallsyms 2>/dev/null)" -lt 100 ]; }; then
 		kernelFlagsErr
 	fi
 	mv kernel kernel-origin

@@ -186,21 +186,43 @@ pub fn on_post_data_fs(superkey: Option<String>) -> Result<()> {
         warn!("load sepolicy.rule failed");
     }
 
-    if let Err(e) = metamodule::exec_mount_script(module_dir) {
-        warn!("execute metamodule mount failed: {e}");
-    }
-
-    // exec modules post-fs-data scripts
-    // TODO: Add timeout
+    // ORDER MATTERS — mirror MagiskD::post_fs_data() (Magisk 28.1
+    // native/src/core/bootstages.cpp):
+    //
+    //     exec_common_scripts("post-fs-data");
+    //     setup_mounts();
+    //     handle_modules();   // -> exec_module_scripts("post-fs-data")
+    //     load_modules();     // -> system.prop, then root->mount()
+    //
+    // i.e. common scripts, then module post-fs-data scripts, then module
+    // system.prop, and only THEN the (metamodule-driven) module mount.
+    //
+    // apd used to mount FIRST and run the module scripts afterwards.  That
+    // silently broke Riru: riru-core's post-fs-data.sh does
+    //     cp -f /system/lib/libmemtrack.so "$MODDIR/system/lib/libmemtrack_real.so"
+    // to save the *original* memtrack before Riru replaces it.  With the mount
+    // already applied, /system/lib/libmemtrack.so was Riru's own injected
+    // library, so libmemtrack_real.so became a copy of Riru itself.  Zygote
+    // then loaded that copy as well, Riru initialised a second time in the same
+    // process, EdXposed installed its ART hooks twice and spun forever inside
+    // libriru_edxp.so (zygote stuck in state R, system_server never forked).
+    // Running the scripts before the mount keeps libmemtrack_real.so genuine,
+    // exactly like Magisk does.
     if let Err(e) = module::exec_stage_script("post-fs-data", true) {
         warn!("exec post-fs-data scripts failed: {}", e);
     }
     if let Err(e) = lua::exec_stage_lua("post-fs-data", true, superkey.as_deref().unwrap_or("")) {
         warn!("Failed to exec post-fs-data lua: {}", e);
     }
-    // load system.prop
+    // load system.prop (Magisk loads props inside load_modules(), before the
+    // actual mount is published)
     if let Err(e) = module::load_system_prop() {
         warn!("load system.prop failed: {}", e);
+    }
+
+    // Mount last, mirroring Magisk's root->mount() being the final step.
+    if let Err(e) = metamodule::exec_mount_script(module_dir) {
+        warn!("execute metamodule mount failed: {e}");
     }
 
     info!("remove update flag");

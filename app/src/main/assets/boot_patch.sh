@@ -158,6 +158,69 @@ RAW="$WORK/kernel"
 # Preserve the untouched Image for the unpatch path before bvfix/kptools rewrite it.
 cp -f "$RAW" "$WORK/Image.stock" || exit 1
 
+#######################################################################################
+# Fast path: libxtcpatch does the whole verified pipeline in ONE process
+#   bvfix -> kptools -p -> AArch32 entry fix -> zopfli -> in-place repack
+#   (kernel slot / ramdisk / vendor tail keep their absolute offsets)
+#   -> decoded-size field discovery -> 14 checks
+#
+# Why this matters: the vendor stores the decompressed kernel size in a small
+# struct right before QCDT, and the zImage prelude uses it to relocate memory.
+# The offset of that field is NOT fixed across builds (Z9 4.1.0: 0x901021,
+# Z9 4.1.5: 0x90101d, Z8A: 0x9061df).  Hardcoding it produces an image that
+# hangs or resets on 4.1.5/Z8A — which is exactly what the old flow did.
+# magiskboot repack also drops the vendor's kernel-slot layout, so the old flow
+# cannot preserve QCDT/slot padding.  libxtcpatch keeps all of it.
+#######################################################################################
+XTCPATCH=$(ap_tool xtcpatch)
+AP_XTC_ITERS="${AP_XTC_ITERS:-2}"
+
+# Native libs land in the app's lib dir with 0644; copy to the scratch dir so it
+# can be executed regardless of how the loader extracted it.
+if [ -n "$XTCPATCH" ]; then
+  cp -f "$XTCPATCH" "$WORK/xtcpatch" 2>/dev/null && chmod 755 "$WORK/xtcpatch" && XTCPATCH="$WORK/xtcpatch"
+fi
+
+if [ -n "$XTCPATCH" ] && [ $# -eq 0 ]; then
+  echo "- Patching with libxtcpatch (verified pipeline, no magiskboot repack)"
+  echo "- zopfli iterations: $AP_XTC_ITERS (raise with AP_XTC_ITERS=15 for max ratio)"
+  set -x
+  "$XTCPATCH" -b "$AP_BOOTIMAGE" --image "$RAW" -k kpimg \
+      -s "$SUPERKEY" -i "$AP_XTC_ITERS" -o "$WORK/new-boot.img"
+  patch_rc=$?
+  set +x
+  if [ $patch_rc -ne 0 ] || [ ! -s "$WORK/new-boot.img" ]; then
+    >&2 echo "- libxtcpatch failed: $patch_rc"
+    >&2 echo "- (the original magiskboot flow is kept as a fallback; remove"
+    >&2 echo "-  libxtcpatch.so or pass kptools args to use it)"
+    exit $patch_rc
+  fi
+
+  cp -f "$WORK/Image.stock" kernel.ori 2>/dev/null
+  cp -f "$WORK/new-boot.img" new-boot.img || exit 1
+  echo "- new-boot.img: $($BB stat -c %s new-boot.img) bytes"
+
+  if [ "$FLASH_TO_DEVICE" = "true" ]; then
+    if [ -b "$BOOTIMAGE" ] || [ -c "$BOOTIMAGE" ]; then
+      echo "- Flashing new boot image"
+      flash_image new-boot.img "$BOOTIMAGE"
+      if [ $? -ne 0 ]; then
+        >&2 echo "- Flash error: $?"
+        exit $?
+      fi
+      echo "- Successfully Flashed!"
+    else
+      >&2 echo "- Not a block device, skipping flash: $BOOTIMAGE"
+      echo "- Successfully Patched!"
+    fi
+  else
+    echo "- Successfully Patched!"
+  fi
+  rm -rf "$WORK"
+  trap - EXIT HUP INT TERM
+  exit 0
+fi
+
 # ---------------------------------------------------------------- 2. bvfix
 if [ "$AP_BVFIX" != "0" ]; then
   if [ -n "$BVFIX" ] && [ -x "$BVFIX" ]; then

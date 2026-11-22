@@ -305,10 +305,23 @@ tasks.getByName("preBuild").dependsOn(
 )
 
 // https://github.com/bbqsrc/cargo-ndk
-// cargo ndk -t arm64-v8a -t armeabi-v7a build --release
+// cargo ndk -p <minSdk> -t arm64-v8a -t armeabi-v7a build --release
 tasks.register<Exec>("cargoBuild") {
     executable("cargo")
-    args("ndk", "-t", "arm64-v8a", "-t", "armeabi-v7a", "build", "--release")
+    // --platform has to be the app's minSdk (26), not cargo-ndk's default of 21:
+    // bionic only declares fseeko/ftello from API 24 onwards, Lua's liolib.c uses
+    // them for 32-bit builds, and clang >= 16 turns the implicit declaration
+    // that results at API 21 into a hard error ("ISO C99 and later do not
+    // support implicit function declarations"). armeabi-v7a therefore failed to
+    // build mlua-sys while arm64-v8a (64-bit off_t, available since API 21) was
+    // fine.
+    args(
+        "ndk",
+        "--platform", androidMinSdkVersion.toString(),
+        "-t", "arm64-v8a",
+        "-t", "armeabi-v7a",
+        "build", "--release"
+    )
     workingDir("${project.rootDir}/apd")
 }
 

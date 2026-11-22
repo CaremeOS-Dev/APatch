@@ -62,7 +62,9 @@ jobs:
           rustup default stable
           rustup update stable
           cargo install cargo-ndk
-          rustup target install aarch64-linux-android
+          # 32-bit-only watches (XTC Z-series, msm8937_32go) have no arm64
+          # userspace, so apd is built for armeabi-v7a as well.
+          rustup target install aarch64-linux-android armv7-linux-androideabi
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

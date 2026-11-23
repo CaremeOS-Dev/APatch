@@ -581,4 +581,31 @@ static inline long sc_control_feature(const char *key, const char *name, int sta
     return ret;
 }
 
+
+/**
+ * @brief Poll pending su requests needing a decision (trusted manager only).
+ * @param key superkey, or "su" when caller uid is a trusted manager
+ * @param out output array of struct su_request
+ * @param max capacity of out
+ * @return number of pending requests filled, negative on error
+ */
+static inline long sc_su_prompt_poll(const char *key, struct su_request *out, int max)
+{
+    if (!key || !key[0]) return -EINVAL;
+    if (!out || max <= 0) return -EINVAL;
+    return syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_SU_PENDING_POLL), out, max);
+}
+
+/**
+ * @brief Decide a pending su request (trusted manager only).
+ * @param pid requesting process tgid (from struct su_request.pid)
+ * @param decision SU_DECISION_ALLOW / SU_DECISION_DENY / SU_DECISION_TIMEOUT
+ * @return 0 if the decision was accepted
+ */
+static inline long sc_su_prompt_decision(const char *key, pid_t pid, int decision)
+{
+    if (!key || !key[0]) return -EINVAL;
+    return syscall(__NR_supercall, key, ver_and_cmd(key, SUPERCALL_SU_DECISION), (long)pid, (long)decision);
+}
+
 #endif

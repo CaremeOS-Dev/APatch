@@ -106,7 +106,7 @@ jobject nativeSuProfile(JNIEnv *env, jobject /* this */, jstring super_key_jstr,
         LOGE("nativeSuProfile error: %ld\n", rc);
         return nullptr;
     }
-    jclass cls = env->FindClass("me/bmax/apatch/Natives$Profile");
+    jclass cls = env->FindClass("com/zcg/apatch/Natives$Profile");
     jmethodID constructor = env->GetMethodID(cls, "<init>", "()V");
     jfieldID uidField = env->GetFieldID(cls, "uid", "I");
     jfieldID toUidField = env->GetFieldID(cls, "toUid", "I");
@@ -147,7 +147,7 @@ jobject nativeControlKernelPatchModule(JNIEnv *env, jobject /* this */, jstring 
         LOGE("nativeControlKernelPatchModule error: %ld", rc);
     }
 
-    jclass cls = env->FindClass("me/bmax/apatch/Natives$KPMCtlRes");
+    jclass cls = env->FindClass("com/zcg/apatch/Natives$KPMCtlRes");
     jmethodID constructor = env->GetMethodID(cls, "<init>", "()V");
     jfieldID rcField = env->GetFieldID(cls, "rc", "J");
     jfieldID outMsg = env->GetFieldID(cls, "outMsg", "Ljava/lang/String;");
@@ -303,6 +303,41 @@ void nativeForkDontCareAndExecApd(JNIEnv *env, jclass /* this */, jstring apd_pa
     _exit(1);
 }
 
+/* ---- SU prompt bridge -------------------------------------------------- */
+jobjectArray nativeSuPromptPoll(JNIEnv *env, jobject /* this */, jstring super_key_jstr, jint max) {
+    ensureSuperKeyNonNull(super_key_jstr);
+    const auto super_key = JUTFString(env, super_key_jstr);
+
+    if (max <= 0 || max > 64) max = 32;
+    std::vector<struct su_request> reqs((size_t)max);
+    long n = sc_su_prompt_poll(super_key.get(), reqs.data(), (int)max);
+    if (n < 0) [[unlikely]] {
+        LOGE("nativeSuPromptPoll error: %ld", n);
+        n = 0;
+    }
+
+    jclass cls = env->FindClass("com/zcg/apatch/Natives$SuRequest");
+    if (!cls) return env->NewObjectArray(0, env->FindClass("java/lang/Object"), nullptr);
+    jmethodID ctor = env->GetMethodID(cls, "<init>", "(IIIJILjava/lang/String;Ljava/lang/String;)V");
+    jobjectArray arr = env->NewObjectArray((jsize)n, cls, nullptr);
+    for (int i = 0; i < n; i++) {
+        jobject obj = env->NewObject(cls, ctor,
+                                     (jint)reqs[i].uid, (jint)reqs[i].to_uid, (jint)reqs[i].pid,
+                                     (jlong)reqs[i].stamp, (jint)reqs[i].decision,
+                                     env->NewStringUTF(reqs[i].scontext),
+                                     env->NewStringUTF(reqs[i].comm));
+        env->SetObjectArrayElement(arr, i, obj);
+        env->DeleteLocalRef(obj);
+    }
+    return arr;
+}
+
+jlong nativeSuDecision(JNIEnv *env, jobject /* this */, jstring super_key_jstr, jint pid, jint decision) {
+    ensureSuperKeyNonNull(super_key_jstr);
+    const auto super_key = JUTFString(env, super_key_jstr);
+    return sc_su_prompt_decision(super_key.get(), (pid_t)pid, (int)decision);
+}
+
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
     LOGI("Enter OnLoad");
 
@@ -312,7 +347,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
         return JNI_FALSE;
     }
 
-    auto clazz = JNI_FindClass(env, "me/bmax/apatch/Natives");
+    auto clazz = JNI_FindClass(env, "com/zcg/apatch/Natives");
     if (clazz.get() == nullptr) [[unlikely]] {
         LOGE("Failed to find Natives class");
         return JNI_FALSE;
@@ -326,9 +361,9 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
         {"nativeSetUidExclude", "(Ljava/lang/String;II)I", reinterpret_cast<void *>(&nativeSetUidExclude)},
         {"nativeGetUidExclude", "(Ljava/lang/String;I)I", reinterpret_cast<void *>(&nativeGetUidExclude)},
         {"nativeSuUids", "(Ljava/lang/String;)[I", reinterpret_cast<void *>(&nativeSuUids)},
-        {"nativeSuProfile", "(Ljava/lang/String;I)Lme/bmax/apatch/Natives$Profile;", reinterpret_cast<void *>(&nativeSuProfile)},
+        {"nativeSuProfile", "(Ljava/lang/String;I)Lcom/zcg/apatch/Natives$Profile;", reinterpret_cast<void *>(&nativeSuProfile)},
         {"nativeLoadKernelPatchModule", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)J", reinterpret_cast<void *>(&nativeLoadKernelPatchModule)},
-        {"nativeControlKernelPatchModule", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lme/bmax/apatch/Natives$KPMCtlRes;", reinterpret_cast<void *>(&nativeControlKernelPatchModule)},
+        {"nativeControlKernelPatchModule", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/zcg/apatch/Natives$KPMCtlRes;", reinterpret_cast<void *>(&nativeControlKernelPatchModule)},
         {"nativeUnloadKernelPatchModule", "(Ljava/lang/String;Ljava/lang/String;)J", reinterpret_cast<void *>(&nativeUnloadKernelPatchModule)},
         {"nativeKernelPatchModuleNum", "(Ljava/lang/String;)J", reinterpret_cast<void *>(&nativeKernelPatchModuleNum)},
         {"nativeKernelPatchModuleList", "(Ljava/lang/String;)Ljava/lang/String;", reinterpret_cast<void *>(&nativeKernelPatchModuleList)},
@@ -338,6 +373,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
         {"nativeSuPath", "(Ljava/lang/String;)Ljava/lang/String;", reinterpret_cast<void *>(&nativeSuPath)},
         {"nativeResetSuPath", "(Ljava/lang/String;Ljava/lang/String;)Z", reinterpret_cast<void *>(&nativeResetSuPath)},
         {"nativeControlFeature", "(Ljava/lang/String;Ljava/lang/String;I)J", reinterpret_cast<void *>(&nativeControlFeature)},
+        {"nativeSuPromptPoll", "(Ljava/lang/String;I)[Lcom/zcg/apatch/Natives$SuRequest;", reinterpret_cast<void *>(&nativeSuPromptPoll)},
+        {"nativeSuDecision", "(Ljava/lang/String;II)J", reinterpret_cast<void *>(&nativeSuDecision)},
     };
 
     if (JNI_RegisterNatives(env, clazz, gMethods, sizeof(gMethods) / sizeof(gMethods[0])) < 0) [[unlikely]] {
@@ -345,7 +382,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
         return JNI_FALSE;
     }
 
-    auto magicaClazz = JNI_FindClass(env, "me/bmax/apatch/magica/AppZygotePreload");
+    auto magicaClazz = JNI_FindClass(env, "com/zcg/apatch/magica/AppZygotePreload");
     if (magicaClazz.get() != nullptr) {
         const static JNINativeMethod magicaMethods[] = {
             {"forkDontCareAndExecApd", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", reinterpret_cast<void *>(&nativeForkDontCareAndExecApd)},

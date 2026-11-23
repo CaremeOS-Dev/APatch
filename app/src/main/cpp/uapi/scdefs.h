@@ -121,6 +121,28 @@ struct su_profile
 #define SUPERCALL_SU_RESET_PATH 0x1111
 #define SUPERCALL_SU_GET_SAFEMODE 0x1112
 
+/* SU prompt (弹窗确认) —— 必须与 KernelPatch kernel/patch/include/uapi/scdefs.h 逐字段一致 */
+#define SUPERCALL_SU_PENDING_POLL 0x1113
+#define SUPERCALL_SU_DECISION     0x1114
+
+#define SU_DECISION_PENDING  0
+#define SU_DECISION_ALLOW    1
+#define SU_DECISION_DENY    (-1)
+#define SU_DECISION_TIMEOUT (-2)
+
+#define SU_REQ_COMM_LEN 16
+
+struct su_request
+{
+    uid_t uid;
+    uid_t to_uid;
+    pid_t pid;
+    unsigned long stamp;
+    int decision;
+    char scontext[SUPERCALL_SCONTEXT_LEN];
+    char comm[SU_REQ_COMM_LEN];
+};
+
 #define SUPERCALL_MAX 0x1200
 
 #define SUPERCALL_RES_SUCCEED 0

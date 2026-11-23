@@ -51,7 +51,7 @@ val baseArgs = mutableListOf(
 ).apply { if (ccache != null) add("-DANDROID_CCACHE=$ccache") }
 
 android {
-    namespace = "me.bmax.apatch"
+    namespace = "com.zcg.apatch"
 
     buildTypes {
         debug {
@@ -104,6 +104,7 @@ android {
     }
 
     defaultConfig {
+        applicationId = "com.zcg.apatch"
         minSdk = androidMinSdkVersion
         targetSdk = androidTargetSdkVersion
         versionCode = managerVersionCode

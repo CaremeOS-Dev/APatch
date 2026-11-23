@@ -15,4 +15,12 @@
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
     </style>
 
+    <!-- SU 请求确认弹窗：露出背景对话框 -->
+    <style name="Theme.APatch.SuPrompt" parent="Theme.APatch">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+
 </resources>

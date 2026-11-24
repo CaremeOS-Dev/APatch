@@ -122,7 +122,11 @@ android {
             }
         }
         buildConfigField("String", "buildKPV", "\"$kernelPatchVersion\"")
-        base.archivesName = "APatch_${managerVersionCode}_${managerVersionName}_${branchName}"
+        // Branch names may contain '/' (feat/xxx), which AGP rejects as part of an
+        // output file name: "File paths are not supported when setting an output
+        // file name". Sanitise it instead of failing the release build.
+        base.archivesName = "APatch_${managerVersionCode}_${managerVersionName}_" +
+            branchName.replace(Regex("[^A-Za-z0-9._-]"), "-")
     }
 
     compileOptions {

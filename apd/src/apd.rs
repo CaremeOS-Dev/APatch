@@ -63,8 +63,13 @@ pub fn root_shell() -> Result<()> {
         // kernels use the literal "su"; fall back to that when absent.
         let skey = env_args.get(1).cloned();
         if !crate::supercall::await_su_decision(&skey) {
-            log::warn!("[su_prompt] decision denied or timed out, refusing shell");
-            std::process::exit(1);
+            // Denied or timed out. The caller exec'd `su` and got this helper
+            // instead, so it must not be able to tell that a prompt happened:
+            // exit 127 (the shell convention for "command not found") and write
+            // nothing to stdout/stderr. _exit() rather than exit() so no atexit
+            // handler or buffered write can leak anything either.
+            log::info!("[su_prompt] denied or timed out, exiting like a missing binary");
+            unsafe { libc::_exit(127) };
         }
     }
 

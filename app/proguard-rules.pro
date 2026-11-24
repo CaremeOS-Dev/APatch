@@ -1,3 +1,15 @@
+# JNI: libapjni.so binds these methods by exact name in JNI_OnLoad. If R8 strips or
+# renames one (it follows only *referenced* code -- suPromptPoll became dead code
+# once the app stopped polling), RegisterNatives fails, JNI_OnLoad returns 0 and the
+# whole app dies with UnsatisfiedLinkError before onCreate finishes.
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+-keep class com.zcg.apatch.Natives { *; }
+-keep class com.zcg.apatch.Natives$SuRequest { *; }
+-keep class com.zcg.apatch.Natives$Profile { *; }
+-keep class com.zcg.apatch.Natives$KPMCtlRes { *; }
+
 -dontwarn org.bouncycastle.jsse.BCSSLParameters
 -dontwarn org.bouncycastle.jsse.BCSSLSocket
 -dontwarn org.bouncycastle.jsse.provider.BouncyCastleJsseProvider

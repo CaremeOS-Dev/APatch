@@ -34,17 +34,42 @@ struct Tracked {
 pub fn run(superkey: Option<String>, package: &str, interval_ms: u64) -> Result<()> {
     let activity = format!("{package}/com.zcg.apatch.su.SuPromptActivity");
     info!("[su_prompt] daemon start, target={activity}, interval={interval_ms}ms");
+    // Also on stderr: this is a daemon, so a manual `apd su-prompt ...` looks like a
+    // hang unless it says what it is doing and why it is not prompting anyone.
+    eprintln!(
+        "[su_prompt] watching for su requests (target {activity}, {} ms). \
+         This is a daemon: it does not return. Ctrl-C to stop.",
+        interval_ms
+    );
+    if superkey.is_none() {
+        eprintln!(
+            "[su_prompt] warning: no --superkey given; the kernel will answer -EPERM \
+             unless this uid is the trusted manager"
+        );
+    }
 
     let mut tracked: std::collections::HashMap<i32, Tracked> = std::collections::HashMap::new();
     let mut seen_once: HashSet<i32> = HashSet::new();
+    let mut poll_failures = 0u32;
 
     loop {
         let reqs = match supercall::su_prompt_poll(superkey.as_deref(), 32) {
-            Ok(v) => v,
+            Ok(v) => {
+                if poll_failures > 0 {
+                    eprintln!("[su_prompt] poll recovered after {poll_failures} failure(s)");
+                    poll_failures = 0;
+                }
+                v
+            }
             Err(e) => {
                 // Not fatal: the kernel may not have the feature compiled in, or
                 // the superkey may be wrong. Back off and keep the daemon alive.
-                warn!("[su_prompt] poll failed: {e:#}");
+                poll_failures = poll_failures.saturating_add(1);
+                // Only the first few are worth a line; after that it is spam.
+                if poll_failures <= 3 || poll_failures % 100 == 0 {
+                    warn!("[su_prompt] poll failed: {e:#}");
+                    eprintln!("[su_prompt] poll failed ({poll_failures}): {e:#}");
+                }
                 thread::sleep(Duration::from_millis(interval_ms.max(1000)));
                 continue;
             }

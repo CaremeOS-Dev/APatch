@@ -92,6 +92,7 @@ import com.zcg.apatch.BuildConfig
 import com.zcg.apatch.Natives
 import com.zcg.apatch.R
 import com.zcg.apatch.su.SuPromptBootReceiver
+import com.zcg.apatch.su.SuPromptDaemon
 import com.zcg.apatch.su.SuPromptPrefs
 import com.zcg.apatch.su.SuRequestService
 import com.zcg.apatch.ui.component.SwitchItem
@@ -274,9 +275,11 @@ fun SettingScreen() {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                             requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                                         }
-                                        SuRequestService.start(context)
+                                        // 由 root 守护进程拉起确认框（Magisk 同款做法），
+                                        // 前台服务只在守护进程不可用时兜底。
+                                        SuPromptDaemon.restart(context)
                                     } else {
-                                        SuRequestService.stop(context)
+                                        SuPromptDaemon.stop()
                                     }
                                 }
                             }
@@ -316,6 +319,23 @@ fun SettingScreen() {
                         SuPromptPrefs.setTimeoutSeconds(context, value)
                         timeoutSeconds = value
                     })
+
+                // su 确认框由 root 守护进程 apd 拉起（am start），不依赖悬浮窗权限，
+                // 所以这里只显示守护进程状态，并允许手动重启。
+                val daemonUp = remember { mutableStateOf(SuPromptDaemon.isRunning()) }
+                ListItem(
+                    headlineContent = { Text("授权守护进程") },
+                    supportingContent = {
+                        Text(
+                            if (daemonUp.value) "运行中：请求会直接弹到当前界面之上"
+                            else "未运行：点此启动（需要 root 可用）"
+                        )
+                    },
+                    trailingContent = { Text(if (daemonUp.value) "重启" else "启动") },
+                    modifier = Modifier.clickable {
+                        daemonUp.value = SuPromptDaemon.restart(context)
+                    }
+                )
             }
 
             // Hide SELinux modification (test)

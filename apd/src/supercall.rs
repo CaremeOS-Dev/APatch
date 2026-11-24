@@ -55,14 +55,14 @@ const SU_PROMPT_TIMEOUT_SECS: u64 = 60;
 const SUPERCALL_SCONTEXT_LEN: usize = 0x60;
 
 #[repr(C)]
-struct SuRequest {
-    uid: u32,          // uid_t == unsigned int, but keep 4-byte field distinct
-    to_uid: u32,
-    pid: i32,
-    stamp: c_ulong,
-    decision: i32,
-    scontext: [u8; SUPERCALL_SCONTEXT_LEN],
-    comm: [u8; 16],
+pub struct SuRequest {
+    pub uid: u32,      // uid_t == unsigned int, but keep 4-byte field distinct
+    pub to_uid: u32,
+    pub pid: i32,
+    pub stamp: c_ulong,
+    pub decision: i32,
+    pub scontext: [u8; SUPERCALL_SCONTEXT_LEN],
+    pub comm: [u8; 16],
 }
 
 #[repr(C)]
@@ -262,6 +262,33 @@ fn sc_kstorage_read(key: &CStr, gid: i32, did: i64, data: *mut c_void, dlen: i32
             (((0i64) << 32) | (dlen as i64)) as c_long,
         ) as c_long
     }
+}
+
+/// Poll the kernel for pending su requests (trusted manager / superkey only).
+///
+/// Used by the `su-prompt` daemon: it is the root process that starts the
+/// confirmation activity, the same split Magisk uses (magiskd -> manager UI).
+pub fn su_prompt_poll(superkey: Option<&str>, max: usize) -> anyhow::Result<Vec<SuRequest>> {
+    let key = match superkey.and_then(|s| CString::new(s).ok()) {
+        Some(k) => k,
+        None => CString::new("su").unwrap(),
+    };
+    let n_max = max.clamp(1, 64);
+    let mut buf: Vec<SuRequest> = Vec::with_capacity(n_max);
+    let rc = unsafe {
+        syscall(
+            __NR_SUPERCALL,
+            key.as_ptr(),
+            ver_and_cmd(SUPERCALL_SU_PENDING_POLL),
+            buf.as_mut_ptr() as *mut c_void,
+            n_max as c_long,
+        ) as c_long
+    };
+    if rc < 0 {
+        anyhow::bail!("SUPERCALL_SU_PENDING_POLL returned {rc}");
+    }
+    unsafe { buf.set_len(rc as usize) };
+    Ok(buf)
 }
 
 /// Block (in userspace, where sleeping is legal) until the trusted manager

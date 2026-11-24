@@ -82,6 +82,8 @@ class SuRequestService : Service() {
         if (promptedPids.contains(req.pid)) return
         promptedPids.add(req.pid)
 
+        // 拉起 UI 由 root 守护进程 apd 负责（见 apd/src/su_prompt.rs，am start 不受
+        // 后台启动限制）。这里的服务只在守护进程不可用时兜底，直接 startActivity。
         val intent = Intent(this, SuPromptActivity::class.java).apply {
             putExtra(SuPromptActivity.EXTRA_PID, req.pid)
             putExtra(SuPromptActivity.EXTRA_UID, req.uid)

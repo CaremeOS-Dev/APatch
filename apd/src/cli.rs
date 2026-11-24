@@ -1,4 +1,4 @@
-use crate::{defs, event, insmod, late_load, lua, magica, module, module_config, supercall, utils};
+use crate::{defs, event, insmod, late_load, lua, magica, module, module_config, su_prompt, supercall, utils};
 #[cfg(target_os = "android")]
 use android_logger::Config;
 use anyhow::{Context, Result};
@@ -83,6 +83,20 @@ enum Commands {
 
     /// MagiskPolicy - SELinux Policy Patch Tool
     Sepolicy(crate::sepolicy::Args),
+
+    /// Watch kernel su prompt requests and start the manager's confirmation activity
+    ///
+    /// Kept in the daemon rather than the app: this process is root, so `am start`
+    /// is not subject to the background-activity restrictions that make a
+    /// foreground-service launch unreliable (and it is what Magisk's magiskd does).
+    SuPrompt {
+        /// manager package name; <package>.su.SuPromptActivity is started
+        #[arg(long)]
+        package: String,
+        /// polling interval in milliseconds
+        #[arg(long, default_value_t = 300)]
+        interval: u64,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -242,6 +256,10 @@ pub fn run() -> Result<()> {
         Commands::Insmod { module, params } => insmod::insmod(&module, &params),
 
         Commands::SoftReboot => event::soft_reboot(cli.superkey),
+
+        Commands::SuPrompt { package, interval } => {
+            su_prompt::run(cli.superkey, &package, interval)
+        }
 
         Commands::LateLoad {
             module,

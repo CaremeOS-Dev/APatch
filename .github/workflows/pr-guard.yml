@@ -26,7 +26,7 @@ permissions:
 env:
   KP_REPO: https://github.com/CaremeOS-Dev/KernelPatch
   KP_REF: 75378956a7810600e5c76362a6254d71064a52bc
-  KPIMG_MD5: 32d4deaab9bc008c482a945629279189
+  KPIMG_MD5: 0804fb97f3470053c5599275c3cafde0
 
 jobs:
   guard:

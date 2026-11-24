@@ -90,7 +90,7 @@ pub fn run(
             .args([
                 "start",
                 "-n",
-                &format!("{pkg}/me.bmax.apatch.ui.MainActivity"),
+                &format!("{pkg}/com.zcg.apatch.ui.MainActivity"),
             ])
             .status();
     }

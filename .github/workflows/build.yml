@@ -26,6 +26,8 @@ on:
 jobs:
   build-manager:
     runs-on: ubuntu-latest
+    env:
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
     permissions:
       contents: write
     steps:
@@ -74,6 +76,7 @@ jobs:
 
       - name: Build with Gradle
         run: |
+          chmod +x gradlew
           echo 'org.gradle.parallel=true' >> gradle.properties
           echo 'org.gradle.vfs.watch=true' >> gradle.properties
           echo 'org.gradle.jvmargs=-Xmx2048m' >> gradle.properties

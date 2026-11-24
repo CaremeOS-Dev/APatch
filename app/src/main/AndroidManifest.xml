@@ -12,6 +12,11 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".APApplication"
@@ -26,7 +31,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.APatch"
         android:usesCleartextTraffic="true"
-        android:zygotePreloadName="me.bmax.apatch.magica.AppZygotePreload"
+        android:zygotePreloadName="com.zcg.apatch.magica.AppZygotePreload"
         tools:targetApi="34">
 
         <activity
@@ -87,7 +92,35 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
             <intent-filter>
-                <action android:name="me.bmax.apatch.magica.LAUNCH" />
+                <action android:name="com.zcg.apatch.magica.LAUNCH" />
+            </intent-filter>
+        </receiver>
+
+        <!-- SU 请求确认弹窗 -->
+        <activity
+            android:name=".su.SuPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.APatch.SuPrompt" />
+
+        <!-- SU 请求轮询前台服务 -->
+        <service
+            android:name=".su.SuRequestService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="su_request_arbitration" />
+        </service>
+
+        <!-- 开机后自动恢复轮询服务 -->
+        <receiver
+            android:name=".su.SuPromptBootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

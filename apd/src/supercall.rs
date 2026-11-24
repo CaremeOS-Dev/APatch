@@ -6,7 +6,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use libc::{EINVAL, c_long, c_void, syscall, uid_t};
+use libc::{EINVAL, c_long, c_ulong, c_void, syscall, uid_t};
+use std::{mem::MaybeUninit, thread::sleep, time::{Duration, Instant}};
 use log::{error, info, warn};
 
 use crate::package::{read_ap_package_config, synchronize_package_uid};
@@ -29,14 +30,35 @@ const __NR_SUPERCALL: c_long = 394;
 const __NR_SUPERCALL: c_long = 45;
 const SUPERCALL_SU: c_long = 0x1010;
 const SUPERCALL_KSTORAGE_WRITE: c_long = 0x1041;
+const SUPERCALL_KSTORAGE_READ: c_long = 0x1042;
 const SUPERCALL_SU_GRANT_UID: c_long = 0x1100;
 const SUPERCALL_SU_REVOKE_UID: c_long = 0x1101;
 const SUPERCALL_SU_NUMS: c_long = 0x1102;
 const SUPERCALL_SU_LIST: c_long = 0x1103;
 const SUPERCALL_SU_RESET_PATH: c_long = 0x1111;
 const SUPERCALL_SU_GET_SAFEMODE: c_long = 0x1112;
+const SUPERCALL_SU_PENDING_POLL: c_long = 0x1113;
+const SUPERCALL_SU_DECISION: c_long = 0x1114;
+
+const KSTORAGE_SU_PROMPT_GROUP: i32 = 2;
+const SU_DECISION_PENDING: i32 = 0;
+const SU_DECISION_ALLOW: i32 = 1;
+const SU_DECISION_DENY: i32 = -1;
+const SU_DECISION_TIMEOUT: i32 = -2;
+const SU_PROMPT_TIMEOUT_SECS: u64 = 60;
 
 const SUPERCALL_SCONTEXT_LEN: usize = 0x60;
+
+#[repr(C)]
+struct SuRequest {
+    uid: u32,          // uid_t == unsigned int, but keep 4-byte field distinct
+    to_uid: u32,
+    pid: i32,
+    stamp: c_ulong,
+    decision: i32,
+    scontext: [u8; SUPERCALL_SCONTEXT_LEN],
+    comm: [u8; 16],
+}
 
 #[repr(C)]
 struct SuProfile {
@@ -218,6 +240,91 @@ fn convert_string_to_u8_array(s: &str) -> [u8; SUPERCALL_SCONTEXT_LEN] {
 
 fn convert_superkey(s: &Option<String>) -> Option<CString> {
     s.as_ref().and_then(|s| CString::new(s.clone()).ok())
+}
+
+fn sc_kstorage_read(key: &CStr, gid: i32, did: i64, data: *mut c_void, dlen: i32) -> c_long {
+    if key.to_bytes().is_empty() {
+        return (-EINVAL).into();
+    }
+    unsafe {
+        syscall(
+            __NR_SUPERCALL,
+            key.as_ptr(),
+            ver_and_cmd(SUPERCALL_KSTORAGE_READ),
+            gid as c_long,
+            did as c_long,
+            data,
+            (((0i64) << 32) | (dlen as i64)) as c_long,
+        ) as c_long
+    }
+}
+
+/// Block (in userspace, where sleeping is legal) until the trusted manager
+/// writes a decision for our pending su request, then report ALLOW/DENY.
+/// The kernel only records the request; it never waits.
+pub fn await_su_decision(superkey: &Option<String>) -> bool {
+    let key = match convert_superkey(superkey) {
+        Some(k) => k,
+        // The kernel executes su without injecting a superkey argument, so the
+        // argv-derived key is usually absent or a dummy. kstorage reads are
+        // performed before the kernel's is_authed gate (supercall.c), i.e. they
+        // need only a non-empty key, not the real credential. Fall back to the
+        // literal "su" instead of failing closed, otherwise every keyless `su`
+        // (including whitelisted callers with no pending record) is refused.
+        None => CString::new("su").unwrap(),
+    };
+    let pid = process::id() as i64;
+
+    // Only arbitrate when a pending record actually exists for us (the kernel
+    // writes one only when su_prompt is enabled and the uid is not whitelisted).
+    let mut req = MaybeUninit::<SuRequest>::uninit();
+    let rc = sc_kstorage_read(
+        &key,
+        KSTORAGE_SU_PROMPT_GROUP,
+        pid,
+        req.as_mut_ptr() as *mut c_void,
+        size_of::<SuRequest>() as i32,
+    );
+    if rc < 0 {
+        // No pending record -> normal whitelisted su, proceed without prompt.
+        return true;
+    }
+    let mut req = unsafe { req.assume_init() };
+    if req.decision != SU_DECISION_PENDING {
+        return req.decision == SU_DECISION_ALLOW;
+    }
+
+    info!("[su_prompt] waiting for decision, pid={}, uid={}", pid, req.uid);
+    let start = Instant::now();
+    loop {
+        sleep(Duration::from_millis(100));
+        let mut cur = MaybeUninit::<SuRequest>::uninit();
+        let r = sc_kstorage_read(
+            &key,
+            KSTORAGE_SU_PROMPT_GROUP,
+            pid,
+            cur.as_mut_ptr() as *mut c_void,
+            size_of::<SuRequest>() as i32,
+        );
+        if r < 0 {
+            // Record vanished (e.g. manager removed it) -> deny.
+            warn!("[su_prompt] pending record vanished, denying");
+            return false;
+        }
+        let cur = unsafe { cur.assume_init() };
+        if cur.decision == SU_DECISION_ALLOW {
+            info!("[su_prompt] ALLOW pid={}", pid);
+            return true;
+        }
+        if cur.decision == SU_DECISION_DENY {
+            info!("[su_prompt] DENY pid={}", pid);
+            return false;
+        }
+        if start.elapsed() >= Duration::from_secs(SU_PROMPT_TIMEOUT_SECS) {
+            warn!("[su_prompt] timeout pid={}", pid);
+            return false;
+        }
+    }
 }
 
 pub fn refresh_ap_package_list(skey: &CStr, mutex: &Arc<Mutex<()>>) {

@@ -50,6 +50,24 @@ pub fn root_shell() -> Result<()> {
 #[cfg(unix)]
 pub fn root_shell() -> Result<()> {
     // we are root now, this was set in kernel!
+
+    // SU prompt arbitration (see KernelPatch SU_PROMPT_IMPLEMENTATION.md):
+    // the kernel never sleeps. It records a pending request in kstorage group 2
+    // (keyed by our pid) only when su_prompt is on AND the caller is not in the
+    // static whitelist. We wait here in userspace for the trusted manager to
+    // write ALLOW/DENY. If no pending record exists (normal whitelisted su),
+    // await_su_decision() returns true immediately and behavior is unchanged.
+    {
+        let env_args: Vec<String> = env::args().collect();
+        // argv layout on the su path: [su/kp, <superkey>, ...]. Signature-auth
+        // kernels use the literal "su"; fall back to that when absent.
+        let skey = env_args.get(1).cloned();
+        if !crate::supercall::await_su_decision(&skey) {
+            log::warn!("[su_prompt] decision denied or timed out, refusing shell");
+            std::process::exit(1);
+        }
+    }
+
     let env_args: Vec<String> = env::args().collect();
     let args = env_args
         .iter()

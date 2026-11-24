@@ -1,0 +1,128 @@
+name: PR guard
+
+# Structural checks for pull requests -- the things a human review must not miss,
+# expressed as code:
+#
+#   * package rename: allowed, but it must be CONSISTENT. namespace, manifest
+#     zygotePreloadName, every FindClass()/JNI signature in apjni.cpp and the
+#     MainActivity path in late_load.rs have to agree, otherwise the app loads but
+#     FindClass() returns null at runtime.
+#   * prebuilt .so files: a changed binary must come with the sources that build
+#     it (apd/ for libapd.so). Swapping a binary alone ships code nobody reviewed.
+#   * the shipped kpimg must stay the device-verified build.
+#   * every SUPERCALL id the manager uses must exist in the pinned KernelPatch
+#     with the same value. A manager built against a phantom API silently does
+#     nothing -- exactly what the SU prompt PR (#36 + KernelPatch #1) does on its
+#     own.
+#   * a fork may not modify CI.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+env:
+  KP_REPO: https://github.com/CaremeOS-Dev/KernelPatch
+  KP_REF: 8357a40191ef8eeb57446066d2410b3ea3bddbd0
+  KPIMG_MD5: 8ca5dcbbbeadb649115bbf792caf258c
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Changed files
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "${{ github.base_ref }}"
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" | tee changed.txt
+          echo "--- $(wc -l < changed.txt) file(s) ---"
+
+      - name: Package rename must be consistent
+        run: |
+          set -euo pipefail
+          ns=$(grep -oP '^\s*namespace\s*=\s*"\K[^"]+' app/build.gradle.kts || true)
+          appid=$(grep -oP '^\s*applicationId\s*=\s*"\K[^"]+' app/build.gradle.kts || true)
+          pkg=${appid:-$ns}
+          echo "package under test: $pkg"
+          [ -n "$pkg" ] || { echo "::error::cannot determine the package"; exit 1; }
+
+          path=${pkg//.//}
+          fail=0
+          check() {  # <description> <file> <pattern>
+            if grep -qF -- "$3" "$2"; then echo "  ok   $1"; else echo "::error::$1 -- '$3' not found in $2"; fail=1; fi
+          }
+          check "manifest zygotePreloadName" app/src/main/AndroidManifest.xml "zygotePreloadName=\"$pkg."
+          check "JNI Natives lookup"         app/src/main/cpp/apjni.cpp        "FindClass(\"$path/Natives"
+          check "JNI Profile signature"      app/src/main/cpp/apjni.cpp        "L$path/Natives\$Profile;"
+          check "late_load MainActivity"     apd/src/late_load.rs              "$pkg.ui.MainActivity"
+          [ "$fail" -eq 0 ] || { echo "::error::package '$pkg' is half-renamed; FindClass() will return null at runtime"; exit 1; }
+
+      - name: Prebuilt libraries must come with their sources
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in $(grep -E '^app/libs/.*\.so$' changed.txt || true); do
+            case "$f" in
+              *libapd.so)
+                if grep -qE '^apd/' changed.txt; then echo "  ok   $f changed together with apd/"
+                else echo "::error::$f was replaced without touching apd/ (a prebuilt binary is not reviewable)"; fail=1; fi ;;
+              *libxtcpatch.so)
+                echo "::error::$f is produced by CaremeOS-Dev/CaremePatcher; bump that dependency instead of committing a binary"; fail=1 ;;
+              *)
+                echo "::error::$f: prebuilt binary changed without a matching source change"; fail=1 ;;
+            esac
+          done
+          [ "$fail" -eq 0 ] && echo "no unreviewed prebuilt binaries"
+          exit $fail
+
+      - name: kpimg must stay the device-verified blob
+        run: |
+          set -euo pipefail
+          got=$(md5sum app/src/main/assets/kpimg | cut -d' ' -f1)
+          echo "assets/kpimg md5: $got"
+          [ "$got" = "$KPIMG_MD5" ] || { echo "::error::assets/kpimg is not the verified build ($KPIMG_MD5)"; exit 1; }
+
+      - name: Supercall ids must exist in KernelPatch
+        run: |
+          set -euo pipefail
+          git clone --quiet "$KP_REPO" "$RUNNER_TEMP/KernelPatch"
+          git -C "$RUNNER_TEMP/KernelPatch" checkout --quiet "$KP_REF"
+          kp_header="$RUNNER_TEMP/KernelPatch/kernel/patch/include/uapi/scdefs.h"
+          app_header="app/src/main/cpp/uapi/scdefs.h"
+          test -f "$kp_header" || { echo "::error::KernelPatch scdefs.h not found"; exit 1; }
+
+          awk '/^#define[ \t]+(SUPERCALL|KSTORAGE)_[A-Z0-9_]+[ \t]+(0x[0-9A-Fa-f]+|[0-9]+)/ {print $2, $3}' \
+              "$kp_header" | sort > kp.txt
+          awk '/^#define[ \t]+(SUPERCALL|KSTORAGE)_[A-Z0-9_]+[ \t]+(0x[0-9A-Fa-f]+|[0-9]+)/ {print $2, $3}' \
+              "$app_header" | sort > app.txt
+          echo "manager side defines $(wc -l < app.txt) ids; kernel side $(wc -l < kp.txt)"
+
+          fail=0
+          while read -r name value; do
+            kpval=$(awk -v n="$name" '$1==n {print $2}' kp.txt)
+            if [ -z "$kpval" ]; then
+              echo "::error::$name ($value) is used by the manager but not implemented in KernelPatch@$KP_REF"
+              fail=1
+            elif [ "$kpval" != "$value" ]; then
+              echo "::error::$name is $value in the manager but $kpval in KernelPatch"
+              fail=1
+            fi
+          done < app.txt
+          [ "$fail" -eq 0 ] || { echo "::error::the manager and the kernel disagree on the supercall ABI"; exit 1; }
+          echo "supercall contract OK"
+
+      - name: A fork may not change CI
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          set -euo pipefail
+          if grep -E '^\.github/' changed.txt; then
+            echo "::error::a fork may not modify .github/; land CI changes from a branch of this repo"
+            exit 1
+          fi
+          echo "no CI changes"

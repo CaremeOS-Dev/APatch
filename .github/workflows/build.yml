@@ -178,8 +178,14 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           token: ${{ github.token }}
-          tag: ${{ steps.parse_version.outputs.VERSION }}
+          # Use the tag that was actually pushed. Computing a version number here
+          # meant a `v11309-pre` tag silently rewrote the numbered release of
+          # whatever commit it pointed at -- which is how an unrelated 11302
+          # release kept getting republished.
+          tag: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-pre') }}
+          generateReleaseNotes: ${{ !contains(github.ref_name, '-pre') }}
           artifacts: ${{steps.sign_app.outputs.signedReleaseFile}}
-          generateReleaseNotes: true
-          makeLatest: true
+          makeLatest: ${{ !contains(github.ref_name, '-pre') }}
           replacesArtifacts: true

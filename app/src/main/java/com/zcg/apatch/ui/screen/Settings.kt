@@ -94,7 +94,6 @@ import com.zcg.apatch.R
 import com.zcg.apatch.su.SuPromptBootReceiver
 import com.zcg.apatch.su.SuPromptDaemon
 import com.zcg.apatch.su.SuPromptPrefs
-import com.zcg.apatch.su.SuRequestService
 import com.zcg.apatch.ui.component.SwitchItem
 import com.zcg.apatch.ui.component.rememberLoadingDialog
 import com.zcg.apatch.ui.theme.refreshTheme

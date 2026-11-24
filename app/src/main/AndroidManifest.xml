@@ -103,17 +103,8 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.APatch.SuPrompt" />
 
-        <!-- SU 请求轮询前台服务 -->
-        <service
-            android:name=".su.SuRequestService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="su_request_arbitration" />
-        </service>
-
-        <!-- 开机后自动恢复轮询服务 -->
+        <!-- su 请求由 root 守护进程 apd su-prompt 轮询并 am start 本 Activity，
+             不再有前台轮询服务。开机只恢复内核开关并重新拉起守护进程。 -->
         <receiver
             android:name=".su.SuPromptBootReceiver"
             android:exported="true"

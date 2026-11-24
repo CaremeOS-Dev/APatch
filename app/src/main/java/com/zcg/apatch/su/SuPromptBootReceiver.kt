@@ -4,12 +4,18 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.zcg.apatch.APApplication
+import com.zcg.apatch.Natives
 
 /**
- * 开机后恢复 su 轮询服务。
+ * 开机后恢复 su 弹窗。
  *
- * 只有当 su 弹窗功能被用户开启（SharedPreferences 开关）且 KernelPatch 已
- * 就绪时才启动，避免在未 patch 的设备上常驻一个无用的前台服务。
+ * 两件事都必须重做，因为内核里的 `su_prompt` 开关是**内存状态**，重启即清零：
+ *
+ *  1. 用 supercall 把 `su_prompt` / `su_prompt_timeout` 重新打开；
+ *  2. 拉起授权守护进程 `apd su-prompt`。
+ *
+ * 之前这里只启动了前台服务，内核开关没恢复 —— 结果开机后所有非白名单 `su`
+ * 都走「不重定向 → 文件不存在」，表现为 `su: not found` 且不弹窗。
  */
 class SuPromptBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -17,10 +23,11 @@ class SuPromptBootReceiver : BroadcastReceiver() {
             intent.action != Intent.ACTION_LOCKED_BOOT_COMPLETED
         ) return
 
-        val prefs = APApplication.sharedPreferences
-        if (prefs == null || !prefs.getBoolean(KEY_SU_PROMPT_ENABLED, false)) return
+        val prefs = APApplication.sharedPreferences ?: return
+        if (!prefs.getBoolean(KEY_SU_PROMPT_ENABLED, false)) return
 
-        SuRequestService.start(context.applicationContext)
+        val app = context.applicationContext
+        SuPromptDaemon.restore(app)
     }
 
     companion object {

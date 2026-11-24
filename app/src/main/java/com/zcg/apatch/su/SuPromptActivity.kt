@@ -65,6 +65,11 @@ import kotlinx.coroutines.delay
  * 点「允许/拒绝」且「记住选择」打开时。
  */
 class SuPromptActivity : AppCompatActivity() {
+    /** 320x360 @320dpi 上按 200dpi 渲染（详见 ScreenDensity）。系统密度不变。 */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.zcg.apatch.ui.theme.ScreenDensity.wrap(newBase))
+    }
+
     companion object {
         const val EXTRA_PID = "pid"
         const val EXTRA_UID = "uid"
@@ -112,9 +117,7 @@ class SuPromptActivity : AppCompatActivity() {
 
         setContent {
             MaterialTheme {
-                // 160x180dp 的屏上 Material 默认密度会把按钮挤出屏幕
-                com.zcg.apatch.ui.theme.CompactDensity {
-                    SuPromptCard(
+                SuPromptCard(
                     label = label,
                     pkg = pkg,
                     comm = comm,
@@ -138,7 +141,6 @@ class SuPromptActivity : AppCompatActivity() {
                         finish()
                     }
                 )
-                }
             }
         }
     }

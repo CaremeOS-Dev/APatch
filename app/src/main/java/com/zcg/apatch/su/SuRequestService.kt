@@ -97,7 +97,10 @@ class SuRequestService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("SU 请求")
-            .setContentText("$label (${req.comm}) 请求 root 权限")
+            .setContentText(
+                if (req.comm.isBlank()) "$label 请求 root 权限"
+                else "$label (${req.comm}) 请求 root 权限"
+            )
             .setContentIntent(pi)
             .setFullScreenIntent(pi, true) // Android 10+ 后台启动 Activity 的关键
             .setPriority(NotificationCompat.PRIORITY_HIGH)

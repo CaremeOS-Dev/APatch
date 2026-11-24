@@ -68,6 +68,14 @@ jobs:
           set -euo pipefail
           fail=0
           for f in $(grep -E '^app/libs/.*\.so$' changed.txt || true); do
+            # git reports a bare mode change (100755 -> 100644) as a change too;
+            # only content changes matter here.
+            base_sha=$(git rev-parse "origin/${{ github.base_ref }}:$f" 2>/dev/null || echo none)
+            head_sha=$(git rev-parse "HEAD:$f" 2>/dev/null || echo none)
+            if [ "$base_sha" = "$head_sha" ]; then
+              echo "  skip $f (mode-only change, content identical)"
+              continue
+            fi
             case "$f" in
               *libapd.so)
                 if grep -qE '^apd/' changed.txt; then echo "  ok   $f changed together with apd/"
@@ -80,6 +88,16 @@ jobs:
           done
           [ "$fail" -eq 0 ] && echo "no unreviewed prebuilt binaries"
           exit $fail
+
+      - name: gradlew must stay executable
+        run: |
+          set -euo pipefail
+          mode=$(git ls-files -s gradlew | awk '{print $1}')
+          echo "gradlew mode: $mode"
+          [ "$mode" = "100755" ] || {
+            echo "::error::gradlew lost its executable bit ($mode); ./gradlew would fail on Linux"
+            exit 1
+          }
 
       - name: kpimg must stay the device-verified blob
         run: |

@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Commit
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.automirrored.filled.FeaturedPlayList
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.InvertColors
@@ -90,6 +92,7 @@ import com.zcg.apatch.BuildConfig
 import com.zcg.apatch.Natives
 import com.zcg.apatch.R
 import com.zcg.apatch.su.SuPromptBootReceiver
+import com.zcg.apatch.su.SuPromptPrefs
 import com.zcg.apatch.su.SuRequestService
 import com.zcg.apatch.ui.component.SwitchItem
 import com.zcg.apatch.ui.component.rememberLoadingDialog
@@ -278,6 +281,40 @@ fun SettingScreen() {
                                 }
                             }
                         }
+                    })
+
+                // 超时策略：没人应答时自动允许还是拒绝，以及倒计时长度
+                var timeoutAllows by rememberSaveable {
+                    mutableStateOf(SuPromptPrefs.timeoutAllows(context))
+                }
+                var timeoutSeconds by rememberSaveable {
+                    mutableStateOf(SuPromptPrefs.timeoutSeconds(context))
+                }
+                SwitchItem(
+                    icon = Icons.Filled.Timer,
+                    title = "超时后自动允许",
+                    summary = if (timeoutAllows)
+                        "倒计时结束仍未选择时自动放行（不写入白名单）"
+                    else
+                        "倒计时结束仍未选择时自动拒绝（不写入黑名单）",
+                    checked = timeoutAllows,
+                    onCheckedChange = { enabled ->
+                        SuPromptPrefs.setTimeoutAllows(context, enabled)
+                        timeoutAllows = enabled
+                        scope.launch(Dispatchers.IO) {
+                            // 同步给内核：0=拒绝 1=允许
+                            Natives.controlFeature("su_prompt_timeout", enabled)
+                        }
+                    })
+                SwitchItem(
+                    icon = Icons.Filled.HourglassBottom,
+                    title = "倒计时 ${timeoutSeconds} 秒",
+                    summary = "弹窗等待时间；内核侧上限 10 秒，超过按 9 秒计",
+                    checked = timeoutSeconds == 10,
+                    onCheckedChange = { longer ->
+                        val value = if (longer) 10 else 5
+                        SuPromptPrefs.setTimeoutSeconds(context, value)
+                        timeoutSeconds = value
                     })
             }
 

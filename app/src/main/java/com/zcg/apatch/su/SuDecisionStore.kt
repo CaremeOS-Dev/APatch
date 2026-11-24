@@ -34,18 +34,23 @@ object SuDecisionStore {
 
     fun clear() = sessionAllowed.clear()
 
-    /** 把 pid 对应的待决请求裁决为拒绝。 */
+    /** 把 pid 对应的待决请求裁决为拒绝，并记住（写内核黑名单）。 */
     fun deny(pid: Int) {
-        Natives.suDecision(pid, false)
+        Natives.suDecision(pid, Natives.SuDecision.DENY)
     }
 
-    /** 把 pid 对应的待决请求裁决为允许（本次）。 */
+    /** 只拒绝这一次，不记住；下次仍然弹窗。 */
+    fun denyOnce(pid: Int) {
+        Natives.suDecision(pid, Natives.SuDecision.DENY_ONCE)
+    }
+
+    /** 允许这一次，不写白名单；下次仍然弹窗。 */
     fun allowOnce(pid: Int) {
-        Natives.suDecision(pid, true)
+        Natives.suDecision(pid, Natives.SuDecision.ALLOW_ONCE)
     }
 
     /**
-     * 永久授权：同时写内核 su 白名单与 package_config CSV。
+     * 永久允许：写内核白名单（内核收到 ALLOW 时也会自己写一份）+ package_config，
      * 两者必须一起做，否则 uid-listener / 开机重建会用 CSV 覆盖内核状态。
      */
     fun allowAlways(pid: Int, uid: Int, scontext: String, packageName: String) {
@@ -59,8 +64,8 @@ object SuDecisionStore {
             profile = Natives.Profile(uid = uid, toUid = 0, scontext = sctx)
         )
         PkgConfig.changeConfig(config)
-        // 回执内核，唤醒挂起的 execve
-        Natives.suDecision(pid, true)
+        // 回执内核（ALLOW 表示连同记忆），唤醒挂起的 execve
+        Natives.suDecision(pid, Natives.SuDecision.ALLOW)
     }
 
     /** 仅供 UI 展示：由 uid 反查一个可读的应用标签。 */

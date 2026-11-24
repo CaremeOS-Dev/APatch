@@ -43,8 +43,13 @@ const SUPERCALL_SU_DECISION: c_long = 0x1114;
 const KSTORAGE_SU_PROMPT_GROUP: i32 = 2;
 const SU_DECISION_PENDING: i32 = 0;
 const SU_DECISION_ALLOW: i32 = 1;
+const SU_DECISION_ALLOW_ONCE: i32 = 2;
 const SU_DECISION_DENY: i32 = -1;
 const SU_DECISION_TIMEOUT: i32 = -2;
+const SU_DECISION_DENY_ONCE: i32 = -3;
+/* The kernel holds the execve for SU_PROMPT_TIMEOUT_MS (10 s) itself when it can
+ * sleep; this userspace wait only covers the fallback path, so it must be longer
+ * than the kernel's. */
 const SU_PROMPT_TIMEOUT_SECS: u64 = 60;
 
 const SUPERCALL_SCONTEXT_LEN: usize = 0x60;
@@ -291,7 +296,7 @@ pub fn await_su_decision(superkey: &Option<String>) -> bool {
     }
     let mut req = unsafe { req.assume_init() };
     if req.decision != SU_DECISION_PENDING {
-        return req.decision == SU_DECISION_ALLOW;
+        return req.decision == SU_DECISION_ALLOW || req.decision == SU_DECISION_ALLOW_ONCE;
     }
 
     info!("[su_prompt] waiting for decision, pid={}, uid={}", pid, req.uid);
@@ -312,11 +317,14 @@ pub fn await_su_decision(superkey: &Option<String>) -> bool {
             return false;
         }
         let cur = unsafe { cur.assume_init() };
-        if cur.decision == SU_DECISION_ALLOW {
+        if cur.decision == SU_DECISION_ALLOW || cur.decision == SU_DECISION_ALLOW_ONCE {
             info!("[su_prompt] ALLOW pid={}", pid);
             return true;
         }
-        if cur.decision == SU_DECISION_DENY {
+        if cur.decision == SU_DECISION_DENY
+            || cur.decision == SU_DECISION_DENY_ONCE
+            || cur.decision == SU_DECISION_TIMEOUT
+        {
             info!("[su_prompt] DENY pid={}", pid);
             return false;
         }

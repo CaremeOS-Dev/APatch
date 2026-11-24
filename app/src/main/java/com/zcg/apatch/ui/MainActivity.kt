@@ -66,6 +66,7 @@ import com.ramcosta.composedestinations.utils.rememberDestinationsNavigator
 import com.zcg.apatch.APApplication
 import com.zcg.apatch.ui.screen.BottomBarDestination
 import com.zcg.apatch.ui.theme.APatchTheme
+import com.zcg.apatch.ui.theme.CompactDensity
 import com.zcg.apatch.ui.viewmodel.SuperUserViewModel
 import com.zcg.apatch.util.ui.LocalSnackbarHost
 
@@ -87,6 +88,9 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             APatchTheme {
+                // 320x360 @ 320dpi 的手表只有 ~160x180dp 可用；按可用宽度整体缩放
+                // Compose 密度，避免 Material 默认的 16dp 边距 / 56dp 触摸目标溢出。
+                CompactDensity {
                 val navController = rememberNavController()
                 val snackBarHostState = remember { SnackbarHostState() }
                 val configuration = LocalConfiguration.current
@@ -304,6 +308,7 @@ private fun SideBar(navController: NavHostController, modifier: Modifier = Modif
                     )
                 }
             }
+                }
         }
     }
 }

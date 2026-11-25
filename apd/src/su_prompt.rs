@@ -20,15 +20,20 @@ use std::time::{Duration, Instant};
 
 use crate::supercall::{self, SuRequest};
 
-/// A pending request whose activity died without answering is retried, but not
-/// forever: the kernel gives up after its own timeout.
-const MAX_LAUNCH_PER_REQUEST: u32 = 3;
+/// A pending request whose activity died without answering is retried once, and
+/// not more: two dialogs are enough to cover "the user dismissed it by accident",
+/// while a third would just stack windows over each other.
+const MAX_LAUNCH_PER_REQUEST: u32 = 2;
 /// How long a request may sit unanswered before we stop trying to launch UI.
 const REQUEST_DEADLINE: Duration = Duration::from_secs(10);
+/// Minimum gap between two launches for the same request. The activity needs time
+/// to cold-start; re-launching before that only produces duplicates.
+const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 struct Tracked {
     first_seen: Instant,
     launches: u32,
+    next_launch_at: Instant,
 }
 
 pub fn run(
@@ -54,7 +59,6 @@ pub fn run(
     }
 
     let mut tracked: std::collections::HashMap<i32, Tracked> = std::collections::HashMap::new();
-    let mut seen_once: HashSet<i32> = HashSet::new();
     let mut poll_failures = 0u32;
 
     loop {
@@ -85,30 +89,28 @@ pub fn run(
             let entry = tracked.entry(req.pid).or_insert_with(|| Tracked {
                 first_seen: now,
                 launches: 0,
+                next_launch_at: now,
             });
 
             if now.duration_since(entry.first_seen) > REQUEST_DEADLINE {
                 // Kernel has already timed out; stop bothering the user.
                 continue;
             }
-            if entry.launches >= MAX_LAUNCH_PER_REQUEST {
+            // Deadline-based retry: never block the poll loop (a sleep here would
+            // stall every other pending request and, because the entry survives
+            // between polls, would fire the same dialog three times in a row).
+            if entry.launches >= MAX_LAUNCH_PER_REQUEST || now < entry.next_launch_at {
                 continue;
             }
 
             entry.launches += 1;
-            if !seen_once.insert(req.pid) {
-                // Already shown once; only re-launch when the UI has clearly gone
-                // (the activity finishing without a decision leaves the request
-                // pending, so this is the retry path).
-                thread::sleep(Duration::from_millis(1500));
-            }
+            entry.next_launch_at = now + RETRY_INTERVAL;
             launch_activity(&activity, req, manager_uid);
         }
 
         // Forget requests that are gone, so the maps do not grow without bound.
         let live: HashSet<i32> = reqs.iter().map(|r| r.pid).collect();
         tracked.retain(|pid, _| live.contains(pid));
-        seen_once.retain(|pid| live.contains(pid));
 
         thread::sleep(Duration::from_millis(interval_ms));
     }

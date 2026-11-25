@@ -49,7 +49,11 @@ import coil3.request.crossfade
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.zcg.apatch.Natives
 import com.zcg.apatch.R
+import com.zcg.apatch.su.SuDecisionStore
 import com.zcg.apatch.ui.component.ProvideMenuShape
 import com.zcg.apatch.ui.component.SearchAppBar
 import com.zcg.apatch.ui.component.SwitchItem
@@ -64,11 +68,22 @@ fun SuperUserScreen() {
     val viewModel = viewModel<SuperUserViewModel>()
     val scrollBehavior = pinnedScrollBehavior()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // 被用户明确拒绝过的 uid（内核 kstorage group 3）。只在这里展示与解除，
+    // 不做批量操作：误点一次就是永久拒绝，解除必须是一次明确的动作。
+    var deniedUids by remember { mutableStateOf(intArrayOf()) }
+    suspend fun refreshDenied() {
+        deniedUids = withContext(Dispatchers.IO) {
+            runCatching { Natives.suDenyList() }.getOrDefault(intArrayOf())
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (viewModel.appList.isEmpty()) {
             viewModel.fetchAppList()
         }
+        refreshDenied()
     }
 
     Scaffold(
@@ -127,6 +142,39 @@ fun SuperUserScreen() {
             isRefreshing = viewModel.isRefreshing
         ) {
             LazyColumn(Modifier.fillMaxSize()) {
+                if (deniedUids.isNotEmpty()) {
+                    item(key = "deny-header") {
+                        Text(
+                            text = "已拒绝（不会再询问）",
+                            style = TextStyle(fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(deniedUids.toList(), key = { "deny-$it" }) { uid ->
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    SuDecisionStore.labelForUid(context, uid),
+                                    fontSize = 14.sp
+                                )
+                            },
+                            supportingContent = { Text("uid=$uid", fontSize = 11.sp) },
+                            trailingContent = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) { Natives.suDenyRemove(uid) }
+                                        refreshDenied()
+                                    }
+                                }) { Text("解除", fontSize = 12.sp) }
+                            }
+                        )
+                    }
+                    item(key = "deny-divider") {
+                        androidx.compose.material3.HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
                 items(viewModel.appList, key = { it.packageName + it.uid }) { app ->
                     AppItem(app, viewModel)
                 }

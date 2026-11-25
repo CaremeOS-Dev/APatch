@@ -16,6 +16,7 @@ mod pty;
 mod resetprop;
 mod restorecon;
 mod sepolicy;
+mod su_prompt;
 mod supercall;
 mod utils;
 fn main() -> anyhow::Result<()> {

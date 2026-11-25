@@ -338,6 +338,30 @@ jlong nativeSuDecision(JNIEnv *env, jobject /* this */, jstring super_key_jstr, 
     return sc_su_prompt_decision(super_key.get(), (pid_t)pid, (int)decision);
 }
 
+/* ---- SU denylist (kstorage group 3) ------------------------------------- */
+
+jintArray nativeSuDenyList(JNIEnv *env, jobject /* this */, jstring super_key_jstr) {
+    ensureSuperKeyNonNull(super_key_jstr);
+    const auto super_key = JUTFString(env, super_key_jstr);
+
+    long ids[256];
+    long n = sc_kstorage_list_ids(super_key.get(), KSTORAGE_UNUSED_GROUP_3, ids, 256);
+    if (n <= 0) [[unlikely]] return env->NewIntArray(0);
+
+    jintArray arr = env->NewIntArray((jsize)n);
+    if (!arr) return env->NewIntArray(0);
+    std::vector<jint> out((size_t)n);
+    for (long i = 0; i < n; i++) out[(size_t)i] = (jint)ids[i];
+    env->SetIntArrayRegion(arr, 0, (jsize)n, out.data());
+    return arr;
+}
+
+jlong nativeSuDenyRemove(JNIEnv *env, jobject /* this */, jstring super_key_jstr, jint uid) {
+    ensureSuperKeyNonNull(super_key_jstr);
+    const auto super_key = JUTFString(env, super_key_jstr);
+    return sc_kstorage_remove(super_key.get(), KSTORAGE_UNUSED_GROUP_3, (long)uid);
+}
+
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
     LOGI("Enter OnLoad");
 
@@ -375,6 +399,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void * /*reserved*/) {
         {"nativeControlFeature", "(Ljava/lang/String;Ljava/lang/String;I)J", reinterpret_cast<void *>(&nativeControlFeature)},
         {"nativeSuPromptPoll", "(Ljava/lang/String;I)[Lcom/zcg/apatch/Natives$SuRequest;", reinterpret_cast<void *>(&nativeSuPromptPoll)},
         {"nativeSuDecision", "(Ljava/lang/String;II)J", reinterpret_cast<void *>(&nativeSuDecision)},
+        {"nativeSuDenyList", "(Ljava/lang/String;)[I", reinterpret_cast<void *>(&nativeSuDenyList)},
+        {"nativeSuDenyRemove", "(Ljava/lang/String;I)J", reinterpret_cast<void *>(&nativeSuDenyRemove)},
     };
 
     if (JNI_RegisterNatives(env, clazz, gMethods, sizeof(gMethods) / sizeof(gMethods[0])) < 0) [[unlikely]] {

@@ -319,6 +319,32 @@ class APApplication : Application(), Thread.UncaughtExceptionHandler {
                             .header("Accept-Language", Locale.getDefault().toLanguageTag()).build()
                     )
                 }.build()
+
+        restoreSuPromptIfEnabled()
+    }
+
+    /**
+     * The kernel's su_prompt switch is RAM state: it is gone after every reboot, and
+     * the boot receiver may fire before root is available (or not fire at all if the
+     * app was force-stopped). Re-apply it whenever the process starts, with a few
+     * retries, so "prompt is enabled" survives a reboot instead of silently degrading
+     * into "every su reports not found".
+     */
+    private fun restoreSuPromptIfEnabled() {
+        if (!sharedPreferences.getBoolean(
+                com.zcg.apatch.su.SuPromptBootReceiver.KEY_SU_PROMPT_ENABLED, false
+            )
+        ) return
+
+        Thread {
+            repeat(5) { attempt ->
+                val ok = runCatching { com.zcg.apatch.su.SuPromptDaemon.restore(this) }
+                    .getOrDefault(false)
+                Log.d("SuPromptRestore", "attempt ${attempt + 1}: ok=$ok")
+                if (ok) return@Thread
+                Thread.sleep(10_000)
+            }
+        }.apply { isDaemon = true; name = "su-prompt-restore" }.start()
     }
 
     fun getBackupWarningState(): Boolean {

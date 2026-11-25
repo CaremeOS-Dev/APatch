@@ -125,10 +125,12 @@ struct su_profile
 #define SUPERCALL_SU_PENDING_POLL 0x1113
 #define SUPERCALL_SU_DECISION     0x1114
 
-#define SU_DECISION_PENDING  0
-#define SU_DECISION_ALLOW    1
-#define SU_DECISION_DENY    (-1)
-#define SU_DECISION_TIMEOUT (-2)
+#define SU_DECISION_PENDING     0
+#define SU_DECISION_ALLOW       1
+#define SU_DECISION_ALLOW_ONCE  2
+#define SU_DECISION_DENY      (-1)
+#define SU_DECISION_TIMEOUT   (-2)
+#define SU_DECISION_DENY_ONCE (-3)
 
 #define SU_REQ_COMM_LEN 16
 

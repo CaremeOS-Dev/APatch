@@ -71,6 +71,11 @@ import com.zcg.apatch.util.ui.LocalSnackbarHost
 
 class MainActivity : AppCompatActivity() {
 
+    /** 320x360 @320dpi 上按 200dpi 渲染（详见 ScreenDensity）。系统密度不变。 */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.zcg.apatch.ui.theme.ScreenDensity.wrap(newBase))
+    }
+
     private var isLoading = true
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")

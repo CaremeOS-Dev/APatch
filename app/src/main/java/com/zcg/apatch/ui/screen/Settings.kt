@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Commit
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.automirrored.filled.FeaturedPlayList
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.InvertColors
@@ -90,7 +92,8 @@ import com.zcg.apatch.BuildConfig
 import com.zcg.apatch.Natives
 import com.zcg.apatch.R
 import com.zcg.apatch.su.SuPromptBootReceiver
-import com.zcg.apatch.su.SuRequestService
+import com.zcg.apatch.su.SuPromptDaemon
+import com.zcg.apatch.su.SuPromptPrefs
 import com.zcg.apatch.ui.component.SwitchItem
 import com.zcg.apatch.ui.component.rememberLoadingDialog
 import com.zcg.apatch.ui.theme.refreshTheme
@@ -242,8 +245,6 @@ fun SettingScreen() {
                         }
                     })
             }
-
-            // SU 弹窗确认（把授权从内核白名单改为运行时询问）
             if (kPatchReady && aPatchReady) {
                 var suPromptEnabled by rememberSaveable {
                     mutableStateOf(
@@ -271,14 +272,87 @@ fun SettingScreen() {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                             requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                                         }
-                                        SuRequestService.start(context)
+                                        // 由 root 守护进程拉起确认框（Magisk 同款做法），
+                                        // 前台服务只在守护进程不可用时兜底。
+                                        SuPromptDaemon.restart(context)
                                     } else {
-                                        SuRequestService.stop(context)
+                                        SuPromptDaemon.stop()
                                     }
                                 }
                             }
                         }
                     })
+
+                // 超时策略：没人应答时自动允许还是拒绝，以及倒计时长度
+                var timeoutAllows by rememberSaveable {
+                    mutableStateOf(SuPromptPrefs.timeoutAllows(context))
+                }
+                var timeoutSeconds by rememberSaveable {
+                    mutableStateOf(SuPromptPrefs.timeoutSeconds(context))
+                }
+                SwitchItem(
+                    icon = Icons.Filled.Timer,
+                    title = "超时后自动允许",
+                    summary = if (timeoutAllows)
+                        "倒计时结束仍未选择时自动放行（不写入白名单）"
+                    else
+                        "倒计时结束仍未选择时自动拒绝（不写入黑名单）",
+                    checked = timeoutAllows,
+                    onCheckedChange = { enabled ->
+                        SuPromptPrefs.setTimeoutAllows(context, enabled)
+                        timeoutAllows = enabled
+                        scope.launch(Dispatchers.IO) {
+                            // 同步给内核：0=拒绝 1=允许
+                            Natives.controlFeature("su_prompt_timeout", enabled)
+                        }
+                    })
+                SwitchItem(
+                    icon = Icons.Filled.HourglassBottom,
+                    title = "倒计时 ${timeoutSeconds} 秒",
+                    summary = "弹窗等待时间；内核侧上限 10 秒，超过按 9 秒计",
+                    checked = timeoutSeconds == 10,
+                    onCheckedChange = { longer ->
+                        val value = if (longer) 10 else 5
+                        SuPromptPrefs.setTimeoutSeconds(context, value)
+                        timeoutSeconds = value
+                    })
+
+                // su 确认框由 root 守护进程 apd 拉起（am start），不依赖悬浮窗权限，
+                // 所以这里只显示守护进程状态，并允许手动重启。
+                val daemonUp = remember { mutableStateOf(SuPromptDaemon.isRunning()) }
+                ListItem(
+                    headlineContent = { Text("授权守护进程") },
+                    supportingContent = {
+                        Text(
+                            if (daemonUp.value) "运行中：请求会直接弹到当前界面之上"
+                            else "未运行：点此启动（需要 root 可用）"
+                        )
+                    },
+                    trailingContent = { Text(if (daemonUp.value) "重启" else "启动") },
+                    modifier = Modifier.clickable {
+                        daemonUp.value = SuPromptDaemon.restart(context)
+                    }
+                )
+
+                // 探针是否真的在干活。内核侧计数器，只读 —— 免得每次都靠
+                // `which su` 的输出反推探针有没有生效。
+                val probeStatus = remember { mutableStateOf(-1L) }
+                ListItem(
+                    headlineContent = { Text("which 探针状态") },
+                    supportingContent = {
+                        Text(
+                            when {
+                                probeStatus.value < 0 -> "点此刷新"
+                                probeStatus.value and 1L == 1L -> "已停用：内核未解析到 putname（避免泄漏）"
+                                else -> "工作中，已拦下 ${probeStatus.value shr 8} 次 su 查询"
+                            }
+                        )
+                    },
+                    trailingContent = { Text("刷新") },
+                    modifier = Modifier.clickable {
+                        probeStatus.value = Natives.controlFeature("su_probe_status", -1)
+                    }
+                )
             }
 
             // Hide SELinux modification (test)

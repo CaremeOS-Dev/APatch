@@ -159,6 +159,11 @@ object Natives {
         return nativeControlFeature(APApplication.superKey, featureName, if (enable) 1 else 0)
     }
 
+    /** Query form: state = -1 asks the kernel for the current value (or status). */
+    fun controlFeature(featureName: String, state: Int): Long {
+        return nativeControlFeature(APApplication.superKey, featureName, state)
+    }
+
     // ---- SU prompt (弹窗确认) ----
 
     /** 一条待裁决的 su 请求，字段与内核 struct su_request 逐项对应。 */
@@ -181,10 +186,40 @@ object Natives {
         return nativeSuPromptPoll(APApplication.superKey, max)
     }
 
-    /** 裁决一条请求。allow=true → SU_DECISION_ALLOW，否则 SU_DECISION_DENY。 */
+    /** 裁决一条请求。 */
     @FastNative
     private external fun nativeSuDecision(superKey: String, pid: Int, decision: Int): Long
+
+    /** 旧调用点：只裁决本次，不写白名单/黑名单。 */
     fun suDecision(pid: Int, allow: Boolean): Long {
-        return nativeSuDecision(APApplication.superKey, pid, if (allow) 1 else -1)
+        return nativeSuDecision(
+            APApplication.superKey, pid,
+            if (allow) SuDecision.ALLOW_ONCE else SuDecision.DENY_ONCE
+        )
     }
+
+    /** 带"是否记住"的裁决：ALLOW/DENY 会固化到内核白名单/黑名单。 */
+    fun suDecision(pid: Int, decision: Int): Long {
+        return nativeSuDecision(APApplication.superKey, pid, decision)
+    }
+
+    /** 与 kernel/patch/include/uapi/scdefs.h 的 SU_DECISION_* 一一对应。 */
+    object SuDecision {
+        const val PENDING = 0
+        const val ALLOW = 1
+        const val ALLOW_ONCE = 2
+        const val DENY = -1
+        const val TIMEOUT = -2
+        const val DENY_ONCE = -3
+    }
+
+    /** 被用户拒绝过、已固化的 uid 列表（内核 kstorage group 3）。 */
+    @FastNative
+    private external fun nativeSuDenyList(superKey: String): IntArray
+    fun suDenyList(): IntArray = nativeSuDenyList(APApplication.superKey)
+
+    /** 解除某个 uid 的黑名单，下次 su 会重新弹窗。 */
+    @FastNative
+    private external fun nativeSuDenyRemove(superKey: String, uid: Int): Long
+    fun suDenyRemove(uid: Int): Long = nativeSuDenyRemove(APApplication.superKey, uid)
 }

@@ -93,6 +93,16 @@ enum Commands {
         /// manager package name; <package>.su.SuPromptActivity is started
         #[arg(long)]
         package: String,
+        /// uid of the manager app.
+        ///
+        /// `am start` must run as that uid: the activity is not exported, so a
+        /// launch from this daemon's own uid (0) is refused by ActivityManager
+        /// with "Permission Denial ... not exported". Running as the app's uid
+        /// makes it a same-uid start, which is allowed, and keeps the activity
+        /// unexported so no other app can pop a confirmation for a pid of its
+        /// choosing.
+        #[arg(long)]
+        uid: Option<u32>,
         /// polling interval in milliseconds
         #[arg(long, default_value_t = 300)]
         interval: u64,
@@ -257,8 +267,8 @@ pub fn run() -> Result<()> {
 
         Commands::SoftReboot => event::soft_reboot(cli.superkey),
 
-        Commands::SuPrompt { package, interval } => {
-            su_prompt::run(cli.superkey, &package, interval)
+        Commands::SuPrompt { package, uid, interval } => {
+            su_prompt::run(cli.superkey, &package, uid, interval)
         }
 
         Commands::LateLoad {

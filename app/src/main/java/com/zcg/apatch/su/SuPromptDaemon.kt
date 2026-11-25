@@ -58,7 +58,7 @@ object SuPromptDaemon {
         val key = APApplication.superKey
         getRootShell().newJob().add(
             "pkill -f \"$MARKER\" 2>/dev/null; " +
-                "nohup ${APApplication.APD_PATH} --superkey '$key' su-prompt --package $pkg " +
+                "nohup ${APApplication.APD_PATH} --superkey '$key' su-prompt --package $pkg --uid ${android.os.Process.myUid()} " +
                 ">/dev/null 2>&1 &",
             "sleep 1",
             "pgrep -f \"$MARKER\" >/dev/null 2>&1 && echo up || echo down"

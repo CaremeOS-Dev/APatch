@@ -31,7 +31,12 @@ struct Tracked {
     launches: u32,
 }
 
-pub fn run(superkey: Option<String>, package: &str, interval_ms: u64) -> Result<()> {
+pub fn run(
+    superkey: Option<String>,
+    package: &str,
+    manager_uid: Option<u32>,
+    interval_ms: u64,
+) -> Result<()> {
     let activity = format!("{package}/com.zcg.apatch.su.SuPromptActivity");
     info!("[su_prompt] daemon start, target={activity}, interval={interval_ms}ms");
     // Also on stderr: this is a daemon, so a manual `apd su-prompt ...` looks like a
@@ -97,7 +102,7 @@ pub fn run(superkey: Option<String>, package: &str, interval_ms: u64) -> Result<
                 // pending, so this is the retry path).
                 thread::sleep(Duration::from_millis(1500));
             }
-            launch_activity(&activity, req);
+            launch_activity(&activity, req, manager_uid);
         }
 
         // Forget requests that are gone, so the maps do not grow without bound.
@@ -109,7 +114,7 @@ pub fn run(superkey: Option<String>, package: &str, interval_ms: u64) -> Result<
     }
 }
 
-fn launch_activity(activity: &str, req: &SuRequest) {
+fn launch_activity(activity: &str, req: &SuRequest, manager_uid: Option<u32>) {
     let scontext = String::from_utf8_lossy(&req.scontext)
         .trim_end_matches('\0')
         .to_string();
@@ -135,8 +140,19 @@ fn launch_activity(activity: &str, req: &SuRequest) {
         "comm",
         &comm,
     ]);
-    // The activity must not be forced to the foreground of an existing task.
-    cmd.args(["--activity-new-task"]);
+    // FLAG_ACTIVITY_NEW_TASK, in numeric form: the `--activity-new-task` spelling
+    // only exists on newer `am`, and this device runs Android 8.1.
+    cmd.args(["-f", "0x10000000"]);
+
+    // Run `am` as the manager's uid. SuPromptActivity is not exported, so a launch
+    // from this daemon's uid (0) is refused with "Permission Denial ... not
+    // exported"; from the app's own uid it is a same-uid start, which is allowed.
+    // Keeping the activity unexported matters: an exported prompt could be popped
+    // by any app with a pid of its choosing, tricking the user into granting root.
+    if let Some(uid) = manager_uid {
+        use std::os::unix::process::CommandExt;
+        cmd.uid(uid);
+    }
 
     match cmd.output() {
         Ok(out) if out.status.success() => {

@@ -159,6 +159,11 @@ object Natives {
         return nativeControlFeature(APApplication.superKey, featureName, if (enable) 1 else 0)
     }
 
+    /** Query form: state = -1 asks the kernel for the current value (or status). */
+    fun controlFeature(featureName: String, state: Int): Long {
+        return nativeControlFeature(APApplication.superKey, featureName, state)
+    }
+
     // ---- SU prompt (弹窗确认) ----
 
     /** 一条待裁决的 su 请求，字段与内核 struct su_request 逐项对应。 */

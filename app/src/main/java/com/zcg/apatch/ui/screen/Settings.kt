@@ -333,6 +333,26 @@ fun SettingScreen() {
                         daemonUp.value = SuPromptDaemon.restart(context)
                     }
                 )
+
+                // 探针是否真的在干活。内核侧计数器，只读 —— 免得每次都靠
+                // `which su` 的输出反推探针有没有生效。
+                val probeStatus = remember { mutableStateOf(-1L) }
+                ListItem(
+                    headlineContent = { Text("which 探针状态") },
+                    supportingContent = {
+                        Text(
+                            when {
+                                probeStatus.value < 0 -> "点此刷新"
+                                probeStatus.value and 1L == 1L -> "已停用：内核未解析到 putname（避免泄漏）"
+                                else -> "工作中，已拦下 ${probeStatus.value shr 8} 次 su 查询"
+                            }
+                        )
+                    },
+                    trailingContent = { Text("刷新") },
+                    modifier = Modifier.clickable {
+                        probeStatus.value = Natives.controlFeature("su_probe_status", -1)
+                    }
+                )
             }
 
             // Hide SELinux modification (test)

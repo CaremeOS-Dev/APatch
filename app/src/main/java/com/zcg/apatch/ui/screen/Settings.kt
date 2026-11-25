@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.FeaturedPlayList
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.InvertColors
@@ -242,30 +241,6 @@ fun SettingScreen() {
                             if (result == 0L) {
                                 prefs.edit { putBoolean("sucompat_enabled", enabled) }
                                 sucompatEnabled = enabled
-                            }
-                        }
-                    })
-            // 隐藏 su 的 stat/access 探针：区分 stat（shell 查找，需要成功）
-                // 与 access（`which su`、Root 检测用，需要失败）。默认关闭 ——
-                // 这组钩子历史上在本机引发过 EFAULT 风暴（双重 hook，已修），
-                // 打开前请确认设备能正常重启。
-                var pathProbeEnabled by rememberSaveable {
-                    mutableStateOf(prefs.getBoolean("path_probe_enabled", false))
-                }
-                SwitchItem(
-                    icon = Icons.Filled.VisibilityOff,
-                    title = "对未授权应用隐藏 su（which 检测）",
-                    summary = if (pathProbeEnabled)
-                        "access() 对未授权 uid 返回不存在，`which su` 检测不到；shell 仍可执行 su 触发弹窗"
-                    else
-                        "关闭时 `which su` 能查到 su（供 Root 检测的服务会看到）",
-                    checked = pathProbeEnabled,
-                    onCheckedChange = { enabled ->
-                        scope.launch(Dispatchers.IO) {
-                            val rc = Natives.controlFeature("path_probe", enabled)
-                            if (rc >= 0) {
-                                prefs.edit { putBoolean("path_probe_enabled", enabled) }
-                                withContext(Dispatchers.Main) { pathProbeEnabled = enabled }
                             }
                         }
                     })
